@@ -3,6 +3,7 @@
  * 이 프로그램은 한양대학교 ERICA 컴퓨터학부 학생을 위한 교육용으로 제작되었다.
  * 한양대학교 ERICA 학생이 아닌 이는 프로그램을 수정하거나 배포할 수 없다.
  * 프로그램을 수정할 경우 날짜, 학과, 학번, 이름, 수정 내용을 기록한다.
+ * ㄴ20250316 컴퓨터학과 2021073563 최병희 표준입출력 리다이렉션 기능 추가.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -69,6 +70,66 @@ static void cmdexec(char *cmd)
         }        
     } while (p);
     argv[argc] = NULL;
+
+    /*
+    * 기호 '<' 또는 '>'를 사용하여 표준 입출력을 파일로 바꾼다.
+    * 파싱된 명령어에 '<' 또는 '>'가 있으면 그 다음 인자를 파일명으로 받고,
+    * 파일을 open()함수로 열고 FileDescriptor를 받아 dup2()함수를 호출한다.
+    * 이후 파싱된 명령어에서 '<', '>'과 파일명을 배열에서 삭제한다.
+    */
+    
+    char *inFileName = NULL, *outFileName = NULL;       /* 파일 입출력을 위한 파일 명 변수 */
+    int inFileDescriptor = -1, outFileDescriptor = -1;  /* 파일 입출력을 위한 파일 디스크립터 */
+    
+    for (int i = 0; i < argc; i++)
+    {
+        if(strcmp(argv[i],">")==0){
+            outFileName = argv[i+1];
+            outFileDescriptor = open(outFileName,O_WRONLY|O_CREAT|O_TRUNC,0666);
+            if(outFileDescriptor<0){
+                perror("open");
+                exit(EXIT_FAILURE);
+            }
+            if(dup2(outFileDescriptor,STDOUT_FILENO)){
+                // perror("dup2");
+                close(outFileDescriptor);
+                exit(EXIT_FAILURE);
+            }
+            close(outFileDescriptor);
+            for (int j = i; j < argc-2; j++)
+            {
+                argv[j] = argv[j+2];
+            }
+            argc -= 2;
+            argv[argc] = NULL;
+            
+        }
+        else if(strcmp(argv[i],"<")==0){
+            inFileName = argv[i+1];
+            inFileDescriptor = open(inFileName,O_RDONLY);
+            if (inFileDescriptor<0){   
+                perror("open");
+                exit(EXIT_FAILURE);
+            }
+            if(dup2(inFileDescriptor,STDIN_FILENO)){
+                perror("dup2");
+                close(inFileDescriptor);
+                exit(EXIT_FAILURE);
+            }
+            close(inFileDescriptor);
+            for (int j = i; j < argc-2; j++)
+            {
+                argv[j] = argv[j+2];
+            }
+            argc -= 2;
+            argv[argc] = NULL;
+        }
+        else{
+            i++;    /* >, <가 없으면 다음 인자로 넘어간다.*/
+        }
+    }
+    
+    
     /*
      * argv에 저장된 명령어를 실행한다.
      */
@@ -139,9 +200,11 @@ int main(void)
         }
         /*
          * 자식 프로세스는 명령어를 실행하고 종료한다.
+         * ~ 파일 출력을 위해 출력 버퍼를 강제로 비운다.
          */
         else if (pid == 0) {
             cmdexec(cmd);
+            fflush(stdout);
             exit(EXIT_SUCCESS);
         }
         /*
