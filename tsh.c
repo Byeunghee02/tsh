@@ -5,6 +5,7 @@
  * 프로그램을 수정할 경우 날짜, 학과, 학번, 이름, 수정 내용을 기록한다.
  * ㄴ20250316 컴퓨터학과 2021073563 최병희 표준입출력 리다이렉션 기능 추가.
  * ㄴ20250319 컴퓨터학과 2021073563 최병희 파이프 명령 실행 기능 추가 및 오류 처리 추가.
+ * ㄴ20250323 컴퓨터학과 2021073563 최병희 이중리다이렉션 오류 해결.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,6 +32,8 @@ static void cmdexec(char *cmd)
     char *p, *q;                  /* 명령어를 파싱하기 위한 변수 */
     p = cmd;
     p += strspn(p, " \t");
+    printf("Executing command: %s\n", cmd);
+    fflush(stdout);
 
     /*
      * 명령어에 '|' 기호가 있는지 확인하고, 있다면 자식 프로세스와 손자 프로세스를 생성한다.
@@ -73,8 +76,10 @@ static void cmdexec(char *cmd)
                     close(fd[1]);
                     exit(EXIT_FAILURE);
                 }
+                fflush(stdout);
                 close(fd[1]);
                 cmdexec(left);
+                exit(EXIT_SUCCESS);
             }
             else
             {
@@ -86,8 +91,10 @@ static void cmdexec(char *cmd)
                     close(fd[0]);
                     exit(EXIT_FAILURE);
                 }
+                fflush(stdout);
                 close(fd[0]);
                 cmdexec(right);
+                exit(EXIT_SUCCESS);
             }
         }
         else
@@ -157,7 +164,7 @@ static void cmdexec(char *cmd)
 
         char *inFileName = NULL, *outFileName = NULL;      /* 파일 입출력을 위한 파일 명 변수 */
         int inFileDescriptor = -1, outFileDescriptor = -1; /* 파일 입출력을 위한 파일 디스크립터 */
-
+        printf("%d", argc);
         for (int i = 0; i < argc; i++)
         {
             if (strcmp(argv[i], ">") == 0)
@@ -175,6 +182,7 @@ static void cmdexec(char *cmd)
                     close(outFileDescriptor);
                     exit(EXIT_FAILURE);
                 }
+                fflush(stdout);
                 close(outFileDescriptor);
                 for (int j = i; j < argc - 2; j++)
                 {
@@ -182,6 +190,7 @@ static void cmdexec(char *cmd)
                 }
                 argc -= 2;
                 argv[argc] = NULL;
+                i--;
             }
             else if (strcmp(argv[i], "<") == 0)
             {
@@ -198,6 +207,7 @@ static void cmdexec(char *cmd)
                     close(inFileDescriptor);
                     exit(EXIT_FAILURE);
                 }
+                fflush(stdout);
                 close(inFileDescriptor);
                 for (int j = i; j < argc - 2; j++)
                 {
@@ -205,22 +215,25 @@ static void cmdexec(char *cmd)
                 }
                 argc -= 2;
                 argv[argc] = NULL;
-            }
-            else
-            {
-                i++; /* >, <가 없으면 다음 인자로 넘어간다.*/
+                i--;
             }
         }
     }
-
+    for (int j = 0; j < argc; j++)
+    {
+        printf("%s  ", argv[j]);
+    }
+    printf("\n");
     /*
      * argv에 저장된 명령어를 실행한다.
      */
+    fflush(stdout);
     if (argc > 0)
         if (execvp(argv[0], argv))
         {
             perror("execvp");
             fprintf(stderr, "Failed to execute command: %s\n", argv[0]);
+            fflush(stdout);
             exit(EXIT_FAILURE);
         }
 }
@@ -245,9 +258,10 @@ int main(void)
         /*
          * 좀비 (자식)프로세스가 있으면 제거한다.
          */
-        pid = waitpid(-1, NULL, WNOHANG);
-        if (pid > 0)
+        while ((pid = waitpid(-1, NULL, WNOHANG)) > 0)
+        {
             printf("[%d] + done\n", pid);
+        }
         /*
          * 셸 프롬프트를 출력한다. 지연 출력을 방지하기 위해 출력버퍼를 강제로 비운다.
          */
@@ -293,12 +307,10 @@ int main(void)
         }
         /*
          * 자식 프로세스는 명령어를 실행하고 종료한다.
-         * ~ 파일 출력을 위해 출력 버퍼를 강제로 비운다.
          */
         else if (pid == 0)
         {
             cmdexec(cmd);
-            fflush(stdout);
             exit(EXIT_SUCCESS);
         }
         /*
