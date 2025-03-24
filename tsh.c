@@ -3,9 +3,10 @@
  * 이 프로그램은 한양대학교 ERICA 컴퓨터학부 학생을 위한 교육용으로 제작되었다.
  * 한양대학교 ERICA 학생이 아닌 이는 프로그램을 수정하거나 배포할 수 없다.
  * 프로그램을 수정할 경우 날짜, 학과, 학번, 이름, 수정 내용을 기록한다.
- * ㄴ20250316 컴퓨터학과 2021073563 최병희 표준입출력 리다이렉션 기능 추가.
- * ㄴ20250319 컴퓨터학과 2021073563 최병희 파이프 명령 실행 기능 추가 및 오류 처리 추가.
- * ㄴ20250323 컴퓨터학과 2021073563 최병희 이중리다이렉션 오류 해결.
+ * ㄴ20250316 컴퓨터학부 2021073563 최병희 표준입출력 리다이렉션 기능 추가.
+ * ㄴ20250319 컴퓨터학부 2021073563 최병희 파이프 명령 실행 기능 추가 및 오류 처리 추가.
+ * ㄴ20250323 컴퓨터학부 2021073563 최병희 이중리다이렉션 오류 해결.
+ * ㄴ20250324 컴퓨터학부 2021073563 최병희 파이프 위치 조정. 오류 해결.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,7 +33,6 @@ static void cmdexec(char *cmd)
     char *p, *q;                  /* 명령어를 파싱하기 위한 변수 */
     p = cmd;
     p += strspn(p, " \t");
-    printf("Executing command: %s\n", cmd);
     fflush(stdout);
 
     /*
@@ -42,32 +42,32 @@ static void cmdexec(char *cmd)
      */
     if (strpbrk(p, "|"))
     {
-        int fd[2];          /* 파이프 입출력을 위한 File Descriptor */
         char *left, *right; /* '|' 를 기준으로 왼쪽 명령어와 오른쪽 명령어를 각각 저장 */
         left = strsep(&p, "|");
         right = p;
 
-        if (pipe(fd) < 0)
-        {
-            perror("pipe");
-            exit(EXIT_FAILURE);
-        }
-
-        pid_t pid;
-        if ((pid = fork()) < 0)
+        pid_t pid = fork();
+        if (pid < 0)
         {
             perror("fork");
             exit(EXIT_FAILURE);
         }
-        else if (pid == 0)
+        else if (pid == 0) /* 자식프로세스 */
         {
-            pid_t childPid;
-            if ((childPid = fork()) < 0)
+            int fd[2]; /* 파이프 입출력을 위한 File Descriptor */
+            if (pipe(fd) < 0)
+            {
+                perror("pipe");
+                exit(EXIT_FAILURE);
+            }
+
+            pid_t childPid = fork();
+            if (childPid < 0)
             {
                 perror("child fork");
                 exit(EXIT_FAILURE);
             }
-            else if (childPid == 0)
+            else if (childPid == 0) /* 손자프로세스 */
             {
                 close(fd[0]);
                 if (dup2(fd[1], STDOUT_FILENO) < 0)
@@ -79,7 +79,6 @@ static void cmdexec(char *cmd)
                 fflush(stdout);
                 close(fd[1]);
                 cmdexec(left);
-                exit(EXIT_SUCCESS);
             }
             else
             {
@@ -94,7 +93,6 @@ static void cmdexec(char *cmd)
                 fflush(stdout);
                 close(fd[0]);
                 cmdexec(right);
-                exit(EXIT_SUCCESS);
             }
         }
         else
@@ -219,11 +217,6 @@ static void cmdexec(char *cmd)
             }
         }
     }
-    for (int j = 0; j < argc; j++)
-    {
-        printf("%s  ", argv[j]);
-    }
-    printf("\n");
     /*
      * argv에 저장된 명령어를 실행한다.
      */
