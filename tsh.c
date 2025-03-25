@@ -7,6 +7,7 @@
  * ㄴ20250319 컴퓨터학부 2021073563 최병희 파이프 명령 실행 기능 추가 및 오류 처리 추가.
  * ㄴ20250323 컴퓨터학부 2021073563 최병희 이중리다이렉션 오류 해결.
  * ㄴ20250324 컴퓨터학부 2021073563 최병희 파이프 위치 조정. 오류 해결.
+ * ㄴ20250325 컴퓨터학부 2021073563 최병희 리펙토링, 반복되는 코드를 새로운 함수로 정리.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,6 +19,26 @@
 #include <fcntl.h>
 
 #define MAX_LINE 80 /* 명령어의 최대 길이 */
+
+void controlError(char *errorMessage)
+{
+    perror(errorMessage);
+    exit(EXIT_FAILURE);
+}
+
+/*
+ * removeElement - 배열의 원하는 위치에서 원하는 갯수 만큼 삭제한다.
+ * 배열과 배열의 갯수, 삭제할 위치의 인덱스, 삭제할 갯수를 인자로 받아 해당 원소들을 삭제.
+ * 바뀐 배열의 갯수를 리턴.
+ */
+int removeElement(char **arr, int arrCount, int idx, int removeCount)
+{
+    for (int i = idx; i < arrCount; i++)
+        arr[i] = arr[i + removeCount];
+    arrCount -= removeCount;
+    arr[arrCount] = NULL;
+    return arrCount;
+}
 
 /*
  * cmdexec - 명령어를 파싱해서 실행한다.
@@ -48,33 +69,23 @@ static void cmdexec(char *cmd)
 
         pid_t pid = fork();
         if (pid < 0)
-        {
-            perror("fork");
-            exit(EXIT_FAILURE);
-        }
+            controlError("fork");
         else if (pid == 0) /* 자식프로세스 */
         {
             int fd[2]; /* 파이프 입출력을 위한 File Descriptor */
             if (pipe(fd) < 0)
-            {
-                perror("pipe");
-                exit(EXIT_FAILURE);
-            }
+                controlError("pipe");
 
             pid_t childPid = fork();
             if (childPid < 0)
-            {
-                perror("child fork");
-                exit(EXIT_FAILURE);
-            }
+                controlError("child fork");
             else if (childPid == 0) /* 손자프로세스 */
             {
                 close(fd[0]);
                 if (dup2(fd[1], STDOUT_FILENO) < 0)
                 {
-                    perror("dup2");
                     close(fd[1]);
-                    exit(EXIT_FAILURE);
+                    controlError("child dup2");
                 }
                 fflush(stdout);
                 close(fd[1]);
@@ -86,9 +97,8 @@ static void cmdexec(char *cmd)
                 close(fd[1]);
                 if (dup2(fd[0], STDIN_FILENO) < 0)
                 {
-                    perror("dup2");
                     close(fd[0]);
-                    exit(EXIT_FAILURE);
+                    controlError("dup2");
                 }
                 fflush(stdout);
                 close(fd[0]);
@@ -162,7 +172,7 @@ static void cmdexec(char *cmd)
 
         char *inFileName = NULL, *outFileName = NULL;      /* 파일 입출력을 위한 파일 명 변수 */
         int inFileDescriptor = -1, outFileDescriptor = -1; /* 파일 입출력을 위한 파일 디스크립터 */
-        printf("%d", argc);
+
         for (int i = 0; i < argc; i++)
         {
             if (strcmp(argv[i], ">") == 0)
@@ -170,24 +180,15 @@ static void cmdexec(char *cmd)
                 outFileName = argv[i + 1];
                 outFileDescriptor = open(outFileName, O_WRONLY | O_CREAT | O_TRUNC, 0666);
                 if (outFileDescriptor < 0)
-                {
-                    perror("open");
-                    exit(EXIT_FAILURE);
-                }
+                    controlError("out file open");
                 if (dup2(outFileDescriptor, STDOUT_FILENO) < 0)
                 {
-                    perror("dup2");
                     close(outFileDescriptor);
-                    exit(EXIT_FAILURE);
+                    controlError("out file dup2");
                 }
                 fflush(stdout);
                 close(outFileDescriptor);
-                for (int j = i; j < argc - 2; j++)
-                {
-                    argv[j] = argv[j + 2];
-                }
-                argc -= 2;
-                argv[argc] = NULL;
+                argc = removeElement(argv, argc, i, 2);
                 i--;
             }
             else if (strcmp(argv[i], "<") == 0)
@@ -195,24 +196,16 @@ static void cmdexec(char *cmd)
                 inFileName = argv[i + 1];
                 inFileDescriptor = open(inFileName, O_RDONLY);
                 if (inFileDescriptor < 0)
-                {
-                    perror("open");
-                    exit(EXIT_FAILURE);
-                }
+                    controlError("in file open");
                 if (dup2(inFileDescriptor, STDIN_FILENO) < 0)
                 {
-                    perror("dup2");
                     close(inFileDescriptor);
-                    exit(EXIT_FAILURE);
+                    controlError("in file dup2");
                 }
                 fflush(stdout);
                 close(inFileDescriptor);
-                for (int j = i; j < argc - 2; j++)
-                {
-                    argv[j] = argv[j + 2];
-                }
-                argc -= 2;
-                argv[argc] = NULL;
+
+                argc = removeElement(argv, argc, i, 2);
                 i--;
             }
         }
@@ -224,10 +217,9 @@ static void cmdexec(char *cmd)
     if (argc > 0)
         if (execvp(argv[0], argv))
         {
-            perror("execvp");
             fprintf(stderr, "Failed to execute command: %s\n", argv[0]);
             fflush(stdout);
-            exit(EXIT_FAILURE);
+            controlError("execvp");
         }
 }
 
@@ -267,10 +259,7 @@ int main(void)
          */
         len = read(STDIN_FILENO, cmd, MAX_LINE);
         if (len == -1)
-        {
-            perror("read");
-            exit(EXIT_FAILURE);
-        }
+            controlError("main read");
         cmd[--len] = '\0';
         if (len == 0)
             continue;
@@ -294,10 +283,7 @@ int main(void)
          * 자식 프로세스를 생성하여 입력된 명령어를 실행하게 한다.
          */
         if ((pid = fork()) == -1)
-        {
-            perror("fork");
-            exit(EXIT_FAILURE);
-        }
+            controlError("main fork");
         /*
          * 자식 프로세스는 명령어를 실행하고 종료한다.
          */
