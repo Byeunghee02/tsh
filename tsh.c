@@ -8,6 +8,7 @@
  * ㄴ20250323 컴퓨터학부 2021073563 최병희 이중리다이렉션 오류 해결.
  * ㄴ20250324 컴퓨터학부 2021073563 최병희 파이프 위치 조정. 오류 해결.
  * ㄴ20250325 컴퓨터학부 2021073563 최병희 리펙토링, 반복되는 코드를 새로운 함수로 정리.
+ * ㄴ20250326 컴퓨터학부 2021073563 최병희 코드 주석 추가.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,7 +21,8 @@
 
 #define MAX_LINE 80 /* 명령어의 최대 길이 */
 
-void controlError(char *errorMessage)
+
+void controlError(char *errorMessage)   /* 오류 처리 함수 */
 {
     perror(errorMessage);
     exit(EXIT_FAILURE);
@@ -67,42 +69,44 @@ static void cmdexec(char *cmd)
         left = strsep(&p, "|");
         right = p;
 
-        pid_t pid = fork();
+        pid_t pid = fork(); /* 자식프로세스 생성 */
         if (pid < 0)
             controlError("fork");
-        else if (pid == 0) /* 자식프로세스 */
+        else if (pid == 0)  /* 자식프로세스 */
         {
-            int fd[2]; /* 파이프 입출력을 위한 File Descriptor */
+            int fd[2]; /* 자식 프로세스와 손자 프로세스간 통신을 위한 File Descriptor */
             if (pipe(fd) < 0)
                 controlError("pipe");
 
-            pid_t childPid = fork();
+            pid_t childPid = fork();    /* 손자프로세스 생성 */
             if (childPid < 0)
                 controlError("child fork");
-            else if (childPid == 0) /* 손자프로세스 */
+            else if (childPid == 0)     /* 손자프로세스 */
             {
                 close(fd[0]);
-                if (dup2(fd[1], STDOUT_FILENO) < 0)
+                if (dup2(fd[1], STDOUT_FILENO) < 0) /* 손자프로세스의 표준 출력을 파이프로 연결 */
                 {
                     close(fd[1]);
                     controlError("child dup2");
                 }
                 fflush(stdout);
                 close(fd[1]);
-                cmdexec(left);
+                cmdexec(left);  /* 손자프로세스에서 왼쪽 명령어 실행 */
+                exit(EXIT_SUCCESS);
             }
             else
             {
                 waitpid(childPid, NULL, 0); // 손자 프로세스를 기다림
                 close(fd[1]);
-                if (dup2(fd[0], STDIN_FILENO) < 0)
+                if (dup2(fd[0], STDIN_FILENO) < 0)  /* 자식프로세스의 표준 입력을 파이프로 연결 */
                 {
                     close(fd[0]);
                     controlError("dup2");
                 }
                 fflush(stdout);
                 close(fd[0]);
-                cmdexec(right);
+                cmdexec(right); /* 자식프로세스에서 오른쪽 명령어 실행 */
+                exit(EXIT_SUCCESS);
             }
         }
         else
@@ -166,7 +170,7 @@ static void cmdexec(char *cmd)
         /*
          * 기호 '<' 또는 '>'를 사용하여 표준 입출력을 파일로 바꾼다.
          * 파싱된 명령어에 '<' 또는 '>'가 있으면 그 다음 인자를 파일명으로 받고,
-         * 파일을 open()함수로 열고 FileDescriptor를 받아 dup2()함수를 호출한다.
+         * 파일을 open()함수로 열고 FileDescriptor를 받아 dup2()함수를 호출해 표준 입력을 파일로 리다이렉션.
          * 이후 파싱된 명령어에서 '<', '>'과 파일명을 배열에서 삭제한다.
          */
 
@@ -178,26 +182,26 @@ static void cmdexec(char *cmd)
             if (strcmp(argv[i], ">") == 0)
             {
                 outFileName = argv[i + 1];
-                outFileDescriptor = open(outFileName, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+                outFileDescriptor = open(outFileName, O_WRONLY | O_CREAT | O_TRUNC, 0666);  /* 파일이 없으면 생성하고, 있으면 덮어쓰기 */
                 if (outFileDescriptor < 0)
                     controlError("out file open");
-                if (dup2(outFileDescriptor, STDOUT_FILENO) < 0)
+                if (dup2(outFileDescriptor, STDOUT_FILENO) < 0) /* 표준 출력을 파일로 리다이렉션 */
                 {
                     close(outFileDescriptor);
                     controlError("out file dup2");
                 }
                 fflush(stdout);
                 close(outFileDescriptor);
-                argc = removeElement(argv, argc, i, 2);
+                argc = removeElement(argv, argc, i, 2); /* 명령어에서 '<', '>'와 파일명 삭제 */
                 i--;
             }
             else if (strcmp(argv[i], "<") == 0)
             {
                 inFileName = argv[i + 1];
-                inFileDescriptor = open(inFileName, O_RDONLY);
+                inFileDescriptor = open(inFileName, O_RDONLY);  /* 파일을 읽기 전용으로 열기 */
                 if (inFileDescriptor < 0)
                     controlError("in file open");
-                if (dup2(inFileDescriptor, STDIN_FILENO) < 0)
+                if (dup2(inFileDescriptor, STDIN_FILENO) < 0)   /* 표준 입력을 파일로 리다이렉션 */
                 {
                     close(inFileDescriptor);
                     controlError("in file dup2");
@@ -205,7 +209,7 @@ static void cmdexec(char *cmd)
                 fflush(stdout);
                 close(inFileDescriptor);
 
-                argc = removeElement(argv, argc, i, 2);
+                argc = removeElement(argv, argc, i, 2); /* 명령어에서 '<', '>'와 파일명 삭제 */
                 i--;
             }
         }
